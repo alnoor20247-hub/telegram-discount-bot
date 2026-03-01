@@ -1,0 +1,65 @@
+import random
+import sqlite3
+import time
+from telegram import Update, ReplyKeyboardMarkup
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
+
+TOKEN = "PUT_TOKEN_HERE"
+
+db = sqlite3.connect("users.db")
+cursor = db.cursor()
+
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS users(
+user_id INTEGER PRIMARY KEY,
+last_try INTEGER
+)
+""")
+db.commit()
+
+keyboard = ReplyKeyboardMarkup(
+    [["🎁 جرب حظك"]],
+    resize_keyboard=True
+)
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "🔥 جرب حظك واحصل على خصم",
+        reply_markup=keyboard
+    )
+
+async def luck(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    now = int(time.time())
+
+    cursor.execute("SELECT last_try FROM users WHERE user_id=?", (user_id,))
+    data = cursor.fetchone()
+
+    if data and now - data[0] < 259200:
+        h = int((259200-(now-data[0]))/3600)
+        await update.message.reply_text(f"⏳ حاول بعد {h} ساعة")
+        return
+
+    discount = random.randint(1,50)
+    code = f"SALE{random.randint(1000,9999)}"
+
+    cursor.execute(
+        "REPLACE INTO users(user_id,last_try) VALUES(?,?)",
+        (user_id, now)
+    )
+    db.commit()
+
+    await update.message.reply_text(
+        f"🎉 مبروك!\nخصمك {discount}%\nكودك: {code}"
+    )
+
+async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message.text == "🎁 جرب حظك":
+        await luck(update, context)
+
+app = ApplicationBuilder().token(TOKEN).build()
+
+app.add_handler(CommandHandler("start", start))
+app.add_handler(MessageHandler(filters.TEXT, buttons))
+
+app.run_polling()
